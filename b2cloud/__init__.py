@@ -6,6 +6,9 @@ import zlib
 import lxml.html
 import requests
 
+from b2cloud.adapters import HTTPSAdapter
+from b2cloud.exceptions import B2CloudError, LoginError
+
 # データキャッシュ用
 CACHE = {}
 
@@ -23,31 +26,34 @@ def login(customer_code:str, customer_password:str, customer_cls_cocde='', login
     '''
 
     session = requests.Session()
+    session.mount("https://", HTTPSAdapter())
     data = {
-        'quickLoginCheckH': '',
+        'quickLoginCheckH': '0',
         'BTN_NM': 'LOGIN',
         'serviceType': 'portal',
         'CSTMR_CD': customer_code,
         'CSTMR_CLS_CD': customer_cls_cocde,
         'CSTMR_PSWD': customer_password,
         'LOGIN_USER_ID': login_user_id,
-        'quickLoginCheck': ''
     }
-    url = 'https://bmypageapi.kuronekoyamato.co.jp/bmypageapi/login'
-    for i in range(3):
-        try:
-            response = session.post(url, data=data)
-            response.encoding = 'shift-jis'
-            # ログインに成功すればユーザー情報が取得される
-            html = lxml.html.fromstring(response.content)
-            uels = html.xpath('//*[@id="ybmHeaderUserName"]')
-            if response.status_code == 200 and len(uels) > 0:
-                # B2Cloudに遷移
-                session.get('https://newb2web.kuronekoyamato.co.jp/b2/d/_html/index.html?oauth&call_service_code=A')
-                return session
-        except:
-            pass
-    raise Exception('ログインに失敗しました。')
+    url = 'https://bmypage.kuronekoyamato.co.jp/bmypage/servlet/jp.co.kuronekoyamato.wur.hmp.servlet.user.HMPLGI0010JspServlet'
+    response = session.get(url)
+    response.raise_for_status()
+
+    url = "https://bmypageapi.kuronekoyamato.co.jp/bmypageapi/login"
+    response = session.post(url, data=data)
+    response.raise_for_status()
+
+    # ログインに成功すればユーザー情報が取得される
+    response.encoding = 'shift-jis'
+    html = lxml.html.fromstring(response.content)
+    uels = html.xpath('//*[@id="ybmHeaderUserName"]')
+    if response.status_code == 200 and len(uels) > 0:
+        # B2Cloudに遷移
+        session.get('https://newb2web.kuronekoyamato.co.jp/b2/d/_html/index.html?oauth&call_service_code=A')
+        return session
+
+    raise LoginError('ログインに失敗しました')
 
 
 def get_history(session:requests.Session, params:dict):
@@ -291,7 +297,7 @@ def print_issue(session:requests.Session, print_type:str, entry_feed:dict):
                 'id':_id,
                 'shipment':{
                     'shipment_flg': '1',
-                    'printer_type':     entry['shipment']['printer_type'],
+                    'printer_type':     entry['shipment'].get('printer_type', '1'),
                     'service_type':     entry['shipment']['service_type'],
                     'is_cool':          entry['shipment']['is_cool'],
                     'tracking_number':  entry['shipment']['tracking_number'],
@@ -310,7 +316,7 @@ def print_issue(session:requests.Session, print_type:str, entry_feed:dict):
     headers = {'Origin': 'https://newb2web.kuronekoyamato.co.jp'}
 
     # tracking_numberの有無で新規か、再印刷か判断する。
-    if entry_feed['feed']['entry'][0]['shipment']['tracking_number'].startswith('OMN'):
+    if isnew:
         # 新規印刷
         response = session.post(f'https://newb2web.kuronekoyamato.co.jp/b2/p/new?issue&print_type={print_type}&sort1=service_type&sort2=created&sort3=created', headers=headers, json=json_data)
     else:
@@ -326,7 +332,7 @@ def print_issue(session:requests.Session, print_type:str, entry_feed:dict):
             break
         time.sleep(0.1)
     else:
-        raise Exception("PDFデータ生成に失敗")
+        raise B2CloudError("PDFデータ生成に失敗")
     # 完了後にcheckを読み込むレスポンスは空
     _ = session.get(f'https://newb2web.kuronekoyamato.co.jp/b2/p/B2_OKURIJYO?checkonly=1&issue_no={issue_no}')
 
@@ -404,7 +410,7 @@ def get_dm_number_print(session:requests.Session, params:dict):
             break
         time.sleep(0.1)
     else:
-        raise Exception("PDFデータ生成に失敗")
+        raise B2CloudError("PDFデータ生成に失敗")
     # 完了後にcheckを読み込むレスポンスは空
     res = session.get(f'https://newb2web.kuronekoyamato.co.jp/b2/p/B2_OKURIJYO?checkonly=1&issue_no={issue_no}')
 
@@ -562,7 +568,7 @@ def __compress_feed(session, feed):
         if field_list is None:
             return [192]
         if type(field_list) == dict:
-            raise Exception("未実装1")
+            raise NotImplemented("未実装1")
         if type(field_list) is list:
             ret = []
             t = len(field_list)
@@ -597,7 +603,7 @@ def __compress_feed(session, feed):
             for c in bitem:
                 ret.append(c)
             return ret
-        raise Exception("未実装2")
+        raise NotImplemented("未実装2")
 
     template = __create_template()
     # tracking更新処理2 feedをfield_listに変換する
