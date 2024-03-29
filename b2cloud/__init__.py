@@ -329,7 +329,7 @@ def print_issue(session:requests.Session, print_type:str, entry_feed:dict):
     for i in range(100):
         response = session.get(f'https://newb2web.kuronekoyamato.co.jp/b2/p/polling?issue_no={issue_no}&service_no=interman')
         response.raise_for_status()
-        res = json.loads(res.text)
+        res = json.loads(response.text)
         if res['feed']['title'] == "Success":
             break
         time.sleep(0.1)
