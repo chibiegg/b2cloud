@@ -2,6 +2,7 @@ import json
 import re
 import time
 import zlib
+import urllib.parse
 
 import lxml.html
 import requests
@@ -13,7 +14,7 @@ from b2cloud.exceptions import B2CloudError, LoginError
 CACHE = {}
 
 
-def login(customer_code:str, customer_password:str, customer_cls_cocde='', login_user_id='')->requests.Session:
+def login(customer_code:str, customer_password:str, customer_cls_cocde='', login_user_id='', target='b2cloud')->requests.Session:
     '''
     ヤマトビジネスメンバーにログインして、B2クラウドに遷移したsessionを返す
 
@@ -45,8 +46,15 @@ def login(customer_code:str, customer_password:str, customer_cls_cocde='', login
     html = lxml.html.fromstring(response.content)
     uels = html.xpath('//*[@id="ybmHeaderUserName"]')
     if response.status_code == 200 and len(uels) > 0:
-        # B2Cloudに遷移
-        session.get('https://newb2web.kuronekoyamato.co.jp/b2/d/_html/index.html?oauth&call_service_code=A')
+        if not target or target == 'b2cloud':
+            # B2Cloudに遷移
+            session.get('https://newb2web.kuronekoyamato.co.jp/b2/d/_html/index.html?oauth&call_service_code=A')
+        elif target == 'webseikyu':
+            # Web請求に移動
+            querystr = urllib.parse.urlparse(response.url).query
+            query = urllib.parse.parse_qs(querystr)
+            url = "https://webseikyu.kuronekoyamato.co.jp/seikyu/index.jsp?bmypagesession={}".format(query["bmypagesession"][0])
+            session.get(url)
         return session
     raise LoginError('ログインに失敗しました。')
 
